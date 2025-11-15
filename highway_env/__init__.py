@@ -92,6 +92,11 @@ def _register_highway_envs():
         entry_point="highway_env.envs.parking_env:ParkingEnvParkedVehicles",
     )
 
+    register(
+        id="parking-parallel-v0",
+        entry_point="highway_env.envs.parallel_parking_env:ParallelParkingEnv",
+    )
+
     # racetrack_env.py
     register(
         id="racetrack-v0",
