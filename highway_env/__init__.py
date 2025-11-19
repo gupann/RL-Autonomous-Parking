@@ -97,6 +97,11 @@ def _register_highway_envs():
         entry_point="highway_env.envs.parallel_parking_env:ParallelParkingEnv",
     )
 
+    register(
+        id="parking-parallel-dynObs-v0",
+        entry_point="highway_env.envs.parallel_parking_dynObs_env:ParallelParkingDynObsEnv",
+    )
+
     # racetrack_env.py
     register(
         id="racetrack-v0",
@@ -125,7 +130,9 @@ def _register_highway_envs():
     )
 
     # u_turn_env.py
-    register(id="u-turn-v0", entry_point="highway_env.envs.u_turn_env:UTurnEnv")
+    register(
+        id="u-turn-v0", 
+        entry_point="highway_env.envs.u_turn_env:UTurnEnv")
 
 
 _register_highway_envs()
