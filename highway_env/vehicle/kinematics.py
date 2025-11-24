@@ -22,11 +22,11 @@ class Vehicle(RoadObject):
     """ Vehicle length [m] """
     WIDTH = 2.0
     """ Vehicle width [m] """
-    DEFAULT_INITIAL_SPEEDS = [23, 25]
+    DEFAULT_INITIAL_SPEEDS = np.array([-1, 1]) #[23, 25]
     """ Range for random initial speeds [m/s] """
-    MAX_SPEED = 40.0
+    MAX_SPEED = 1 #40.0
     """ Maximum reachable speed [m/s] """
-    MIN_SPEED = -40.0
+    MIN_SPEED = -1 #-40.0
     """ Minimum reachable speed [m/s] """
     HISTORY_SIZE = 30
     """ Length of the vehicle state history, for trajectory display"""
