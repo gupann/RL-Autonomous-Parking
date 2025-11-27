@@ -96,13 +96,13 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "action": {
                     "type": "ContinuousAction",
                     "acceleration_range": (-1.0, 1.0),
-                    "steering_range": np.deg2rad(45),  # ±60° instead of default ±45°
-                    "speed_range": (-1, 1),
+                    # "steering_range": np.deg2rad(45),  # ±60° instead of default ±45°
+                    # "speed_range": (-1, 1),
                 },
                 "reward_weights": [1, 1, 0.1, 0.1, 1, 1],
-                "success_goal_reward": 0.10,
+                "success_goal_reward": 0.08,
                 "collision_reward": -5,
-                "steering_range": np.deg2rad(45),
+                "steering_range": np.deg2rad(60),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
                 "duration": 100,
@@ -111,7 +111,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "centering_position": [0.5, 0.5],
                 "scaling": 7,
                 "controlled_vehicles": 1,
-                "vehicles_count": 0,
+                "vehicles_count": 24,
                 "add_walls": True,
                 "manual_vehicle_position": None,
             }
