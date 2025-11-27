@@ -94,7 +94,7 @@ def _register_highway_envs():
 
     register(
         id="parking-parallel-v0",
-        entry_point="highway_env.envs.parallel_parking_env:ParallelParkingEnv",
+        entry_point="highway_env.envs.parallel_parking_env:ParkingEnv",
     )
 
     register(
