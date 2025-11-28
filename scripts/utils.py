@@ -1,13 +1,31 @@
 import base64
+import shutil
+import warnings
 from pathlib import Path
 
 from gymnasium.wrappers import RecordVideo
 from IPython import display as ipythondisplay
-from pyvirtualdisplay import Display
+
+try:
+    from pyvirtualdisplay import Display
+except Exception:
+    Display = None
 
 
-display = Display(visible=0, size=(1400, 900))
-display.start()
+_virtual_display = None
+# Disable virtual display to avoid Xvfb hanging issues in WSL2
+# Video recording will still work with WSL2's built-in display support
+if False:  # Intentionally disabled
+    if Display is not None and shutil.which("Xvfb"):
+        try:
+            _virtual_display = Display(visible=0, size=(1400, 900))
+            _virtual_display.start()
+        except Exception as exc:
+            _virtual_display = None
+            warnings.warn(
+                f"Could not start virtual display ({exc}). "
+                "Video rendering will be disabled."
+            )
 
 
 def record_videos(env, video_folder="videos"):

@@ -21,6 +21,8 @@ class ParallelParkingDynObsEnv(ParkingEnv):
                 "street_length": 60.0,
                 # distance from center to each parking row
                 "curb_offset": 10.0,
+                # width of central driving lane
+                "lane_width": 10.0,
                 # number of slots per side
                 "n_slots": 8,
                 # which bottom-row slot index is empty (0-based)
@@ -41,7 +43,7 @@ class ParallelParkingDynObsEnv(ParkingEnv):
         curb_offset = self.config["curb_offset"]
         wall_margin = self.config["wall_margin"]
 
-        lane_width = 10.0
+        lane_width = self.config["lane_width"]
         lt = (LineType.CONTINUOUS, LineType.CONTINUOUS)
 
         # Central driving lane (for ego): horizontal, y = 0

@@ -93,11 +93,16 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                     "scales": [100, 100, 5, 5, 1, 1],
                     "normalize": False,
                 },
-                "action": {"type": "ContinuousAction"},
-                "reward_weights": [1, 0.3, 0, 0, 0.02, 0.02],
-                "success_goal_reward": 0.12,
+                "action": {
+                    "type": "ContinuousAction",
+                    "acceleration_range": (-1.0, 1.0),
+                    # "steering_range": np.deg2rad(60),  # ±60° instead of default ±45°
+                    "speed_range": (-2, 2),
+                },
+                "reward_weights": [1, 1, 0.1, 0.1, 1, 1],
+                "success_goal_reward": 0.08,
                 "collision_reward": -5,
-                "steering_range": np.deg2rad(45),
+                "steering_range": np.deg2rad(60),
                 "simulation_frequency": 15,
                 "policy_frequency": 5,
                 "duration": 100,
@@ -106,8 +111,9 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "centering_position": [0.5, 0.5],
                 "scaling": 7,
                 "controlled_vehicles": 1,
-                "vehicles_count": 0,
+                "vehicles_count": 24,
                 "add_walls": True,
+                "manual_vehicle_position": None,
             }
         )
         return config
@@ -199,7 +205,38 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             self.road.objects.append(vehicle.goal)
             empty_spots.remove(lane_index)
 
-        # Other vehicles
+        # Other vehicles - New code for manual parked vehicle positioning
+        # if self.config["manual_vehicle_positions"] is not None:
+        #     # Manual positioning mode
+        #     for position_config in self.config["manual_vehicle_positions"]:
+        #         lane_index = position_config["lane_index"]
+        #         longitudinal = position_config.get("longitudinal", 4.0)
+        #         speed = position_config.get("speed", 0.0)
+                
+        #         # Convert string lane_index to tuple if needed
+        #         if isinstance(lane_index, str):
+        #             # Parse string like "('a', 'b', 0)" to tuple
+        #             lane_index = eval(lane_index)
+                
+        #         if lane_index in empty_spots:
+        #             v = Vehicle.make_on_lane(
+        #                 self.road, lane_index, 
+        #                 longitudinal=longitudinal, 
+        #                 speed=speed
+        #             )
+        #             self.road.vehicles.append(v)
+        #             empty_spots.remove(lane_index)
+        # else:
+        #     # Random positioning mode (original behavior)
+        #     for i in range(self.config["vehicles_count"]):
+        #         if not empty_spots:
+        #             continue
+        #         lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+        #         v = Vehicle.make_on_lane(self.road, lane_index, longitudinal=4.0, speed=0.0)
+        #         self.road.vehicles.append(v)
+        #         empty_spots.remove(lane_index)
+
+        ### ORIGINAL CODE for Other Vehicles
         for i in range(self.config["vehicles_count"]):
             if not empty_spots:
                 continue
