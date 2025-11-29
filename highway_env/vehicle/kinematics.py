@@ -22,11 +22,11 @@ class Vehicle(RoadObject):
     """ Vehicle length [m] """
     WIDTH = 2.0
     """ Vehicle width [m] """
-    DEFAULT_INITIAL_SPEEDS = np.array([-1, 1]) #[23, 25]
+    DEFAULT_INITIAL_SPEEDS = np.array([-1, 1])  # [23, 25]
     """ Range for random initial speeds [m/s] """
-    MAX_SPEED = 1 #40.0
+    MAX_SPEED = 40  # 40 for learning, 1 for testing
     """ Maximum reachable speed [m/s] """
-    MIN_SPEED = -1 #-40.0
+    MIN_SPEED = -40  # 40 for learning, -1 for testing
     """ Minimum reachable speed [m/s] """
     HISTORY_SIZE = 30
     """ Length of the vehicle state history, for trajectory display"""
@@ -71,8 +71,10 @@ class Vehicle(RoadObject):
         :param spacing: ratio of spacing to the front vehicle, 1 being the default
         :return: A vehicle with random position and/or speed
         """
-        _from = lane_from or road.np_random.choice(list(road.network.graph.keys()))
-        _to = lane_to or road.np_random.choice(list(road.network.graph[_from].keys()))
+        _from = lane_from or road.np_random.choice(
+            list(road.network.graph.keys()))
+        _to = lane_to or road.np_random.choice(
+            list(road.network.graph[_from].keys()))
         _id = (
             lane_id
             if lane_id is not None
@@ -95,7 +97,8 @@ class Vehicle(RoadObject):
             * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
         )
         x0 = (
-            np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles])
+            np.max([lane.local_coordinates(v.position)[0]
+                   for v in road.vehicles])
             if len(road.vehicles)
             else 3 * offset
         )
@@ -160,11 +163,13 @@ class Vehicle(RoadObject):
         self.action["acceleration"] = float(self.action["acceleration"])
         if self.speed > self.MAX_SPEED:
             self.action["acceleration"] = min(
-                self.action["acceleration"], 1.0 * (self.MAX_SPEED - self.speed)
+                self.action["acceleration"], 1.0 *
+                (self.MAX_SPEED - self.speed)
             )
         elif self.speed < self.MIN_SPEED:
             self.action["acceleration"] = max(
-                self.action["acceleration"], 1.0 * (self.MIN_SPEED - self.speed)
+                self.action["acceleration"], 1.0 *
+                (self.MIN_SPEED - self.speed)
             )
 
     def on_state_update(self) -> None:

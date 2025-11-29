@@ -99,7 +99,7 @@ def _register_highway_envs():
 
     register(
         id="parking-parallel-dynObs-v0",
-        entry_point="highway_env.envs.parallel_parking_dynObs_env:ParallelParkingDynObsEnv",
+        entry_point="highway_env.envs.parallel_parking_dynObs_env:ParkingEnv",
     )
 
     register(
@@ -136,7 +136,7 @@ def _register_highway_envs():
 
     # u_turn_env.py
     register(
-        id="u-turn-v0", 
+        id="u-turn-v0",
         entry_point="highway_env.envs.u_turn_env:UTurnEnv")
 
 

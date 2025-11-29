@@ -17,6 +17,11 @@ from highway_env.envs.parallel_parking_env import (
     ParkingEnvActionRepeat,
     ParkingEnvParkedVehicles,
 )
+from highway_env.envs.parallel_parking_dynObs_env import (
+    ParkingEnv,
+    ParkingEnvActionRepeat,
+    ParkingEnvParkedVehicles,
+)
 
 from highway_env.envs.racetrack_env import RacetrackEnv
 from highway_env.envs.roundabout_env import RoundaboutEnv

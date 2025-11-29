@@ -66,9 +66,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
     Credits to Munir Jojo-Verge for the idea and initial implementation.
     """
 
-    # For parking env with GrayscaleObservation, the env need
-    # this PARKING_OBS to calculate the reward and the info.
-    # Bug fixed by Mcfly(https://github.com/McflyWZX)
+    # For parking env with GrayscaleObservation, the env needs this mapping
     PARKING_OBS = {
         "observation": {
             "type": "KinematicsGoal",
@@ -77,7 +75,6 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             "normalize": False,
         }
     }
-
 
     def __init__(self, config: dict = None, render_mode: str | None = None) -> None:
         super().__init__(config, render_mode)
@@ -96,12 +93,11 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 },
                 "action": {
                     "type": "ContinuousAction",
-                    "acceleration_range": (-1.0, 1.0),
-                    # "steering_range": np.deg2rad(45),  # ±60° instead of default ±45°
-                    # "speed_range": (-1, 1),
+                    "acceleration_range": (-5.0, 5.0),
+                    "speed_range": (-40, 40),
                 },
                 "reward_weights": [1, 1, 0.1, 0.1, 1, 1],
-                "success_goal_reward": 0.08,
+                "success_goal_reward": 0.12,
                 "collision_reward": -5,
                 "steering_range": np.deg2rad(60),
                 "simulation_frequency": 15,
@@ -112,7 +108,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "centering_position": [0.5, 0.5],
                 "scaling": 7,
                 "controlled_vehicles": 1,
-                "vehicles_count": 24,
+                "vehicles_count": 11,
                 "add_walls": True,
                 "manual_vehicle_position": None,
             }
@@ -132,12 +128,14 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         info = super()._info(obs, action)
         if isinstance(self.observation_type, MultiAgentObservation):
             success = tuple(
-                self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+                self._is_success(
+                    agent_obs["achieved_goal"], agent_obs["desired_goal"])
                 for agent_obs in obs
             )
         else:
             obs = self.observation_type_parking.observe()
-            success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
+            success = self._is_success(
+                obs["achieved_goal"], obs["desired_goal"])
         info.update({"is_success": success})
         return info
 
@@ -145,7 +143,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         self._create_road()
         self._create_vehicles()
 
-    def _create_road(self, spots: int = 8) -> None:
+    def _create_road(self, spots: int = 6) -> None:
         """
         Create a road composed of straight adjacent lanes laid out for parallel parking.
 
@@ -154,10 +152,11 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         net = RoadNetwork()
         self.parking_spot_lanes = []
         width = 4.0
-        lt = (LineType.CONTINUOUS, LineType.CONTINUOUS)
+        lane_lt = (LineType.NONE, LineType.NONE)  # hide horizontal sidelines
+        marker_lt = (LineType.CONTINUOUS, LineType.CONTINUOUS)
         x_offset = 0
         y_offset = 10
-        length = 8
+        length = 10
         slot_boundaries = set()
 
         for k in range(spots):
@@ -167,32 +166,34 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             # Top row: slots parallel to x-axis at y = +y_offset
             top_lane = StraightLane(
                 [x, y_offset],          # start of slot
-                [x + length, y_offset], # end of slot (horizontal)
+                [x + length, y_offset],  # end of slot (horizontal)
                 width=width,
-                line_types=lt,
+                line_types=lane_lt,
             )
             net.add_lane("a", "b", top_lane)
-            self.parking_spot_lanes.append(("a", "b", len(net.graph["a"]["b"]) - 1))
+            self.parking_spot_lanes.append(
+                ("a", "b", len(net.graph["a"]["b"]) - 1))
 
             # Bottom row: slots parallel to x-axis at y = -y_offset
             bottom_lane = StraightLane(
                 [x, -y_offset],
                 [x + length, -y_offset],
                 width=width,
-                line_types=lt,
+                line_types=lane_lt,
             )
             net.add_lane("b", "c", bottom_lane)
-            self.parking_spot_lanes.append(("b", "c", len(net.graph["b"]["c"]) - 1))
+            self.parking_spot_lanes.append(
+                ("b", "c", len(net.graph["b"]["c"]) - 1))
 
-            # Boundaries for vertical markers (shared between slots)
+            # Collect boundaries for vertical markers
             slot_boundaries.update({x, x + length})
 
-        # Store useful geometry for walls alignment
+        # Bounds to align walls with the slot grid
         slot_min_x = min(slot_boundaries)
         slot_max_x = max(slot_boundaries)
+        half_lane_width = width / 2
         margin_x = 2.0
         margin_y = 2.0
-        half_lane_width = width / 2
         self.wall_bounds = {
             "left_x": slot_min_x - margin_x,
             "right_x": slot_max_x + margin_x,
@@ -200,11 +201,9 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             "bot_y": -y_offset - half_lane_width - margin_y,
         }
 
-        # Vertical slot markers (short lanes used purely for rendering)
+        # Vertical markers at slot boundaries (purely for rendering)
         marker_width = 0.1
-        half_lane_width = width / 2
         for i, boundary_x in enumerate(sorted(slot_boundaries)):
-            # Top row marker
             net.add_lane(
                 f"top_marker_{i}_in",
                 f"top_marker_{i}_out",
@@ -212,10 +211,9 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                     [boundary_x, y_offset - half_lane_width],
                     [boundary_x, y_offset + half_lane_width],
                     width=marker_width,
-                    line_types=lt,
+                    line_types=marker_lt,
                 ),
             )
-            # Bottom row marker
             net.add_lane(
                 f"bottom_marker_{i}_in",
                 f"bottom_marker_{i}_out",
@@ -223,7 +221,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                     [boundary_x, -y_offset - half_lane_width],
                     [boundary_x, -y_offset + half_lane_width],
                     width=marker_width,
-                    line_types=lt,
+                    line_types=marker_lt,
                 ),
             )
 
@@ -233,12 +231,12 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             record_history=self.config["show_trajectories"],
         )
 
-
     def _create_vehicles(self) -> None:
         """Create some new random vehicles of a given type, and add them on the road."""
         # Only use the parking lanes for placement; ignore decorative marker lanes
         empty_spots = list(
-            getattr(self, "parking_spot_lanes", self.road.network.lanes_dict().keys())
+            getattr(self, "parking_spot_lanes",
+                    self.road.network.lanes_dict().keys())
         )
 
         # Controlled vehicles
@@ -246,16 +244,22 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         for i in range(self.config["controlled_vehicles"]):
             x0 = float(i - self.config["controlled_vehicles"] // 2) * 10.0
             vehicle = self.action_type.vehicle_class(
-                self.road, [x0, 0.0], 2.0 * np.pi * self.np_random.uniform(), 0.0
+                self.road, [x0, 0.0], 2.0 * np.pi *
+                self.np_random.uniform(), 0.0
             )
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
             self.controlled_vehicles.append(vehicle)
-            empty_spots.remove(vehicle.lane_index)
+            # In case the controlled vehicle spawns off-lane, only drop if present
+            if vehicle.lane_index in empty_spots:
+                empty_spots.remove(vehicle.lane_index)
 
         # Goal
         for vehicle in self.controlled_vehicles:
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+            if not empty_spots:
+                break
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))]
             lane = self.road.network.get_lane(lane_index)
             vehicle.goal = Landmark(
                 self.road, lane.position(lane.length / 2, 0), heading=lane.heading
@@ -263,42 +267,15 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             self.road.objects.append(vehicle.goal)
             empty_spots.remove(lane_index)
 
-        # Other vehicles - New code for manual parked vehicle positioning
-        # if self.config["manual_vehicle_positions"] is not None:
-        #     # Manual positioning mode
-        #     for position_config in self.config["manual_vehicle_positions"]:
-        #         lane_index = position_config["lane_index"]
-        #         longitudinal = position_config.get("longitudinal", 4.0)
-        #         speed = position_config.get("speed", 0.0)
-                
-        #         # Convert string lane_index to tuple if needed
-        #         if isinstance(lane_index, str):
-        #             # Parse string like "('a', 'b', 0)" to tuple
-        #             lane_index = eval(lane_index)
-                
-        #         if lane_index in empty_spots:
-        #             v = Vehicle.make_on_lane(
-        #                 self.road, lane_index, 
-        #                 longitudinal=longitudinal, 
-        #                 speed=speed
-        #             )
-        #             self.road.vehicles.append(v)
-        #             empty_spots.remove(lane_index)
-        # else:
-        #     # Random positioning mode (original behavior)
-        #     for i in range(self.config["vehicles_count"]):
-        #         if not empty_spots:
-        #             continue
-        #         lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
-        #         v = Vehicle.make_on_lane(self.road, lane_index, longitudinal=4.0, speed=0.0)
-        #         self.road.vehicles.append(v)
-        #         empty_spots.remove(lane_index)
-        ### ORIGINAL CODE for Other Vehicles
         for i in range(self.config["vehicles_count"]):
             if not empty_spots:
                 continue
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
-            v = Vehicle.make_on_lane(self.road, lane_index, longitudinal=4.0, speed=0.0)
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))]
+            lane = self.road.network.get_lane(lane_index)
+            # Place each parked car at the slot center
+            v = Vehicle.make_on_lane(
+                self.road, lane_index, longitudinal=lane.length / 2, speed=0.0)
             self.road.vehicles.append(v)
             empty_spots.remove(lane_index)
 
@@ -321,14 +298,18 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             for y in (top_y, bot_y):
                 obstacle = Obstacle(self.road, [center_x, y], heading=0.0)
                 obstacle.LENGTH, obstacle.WIDTH = (total_width, wall_thickness)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2)
                 self.road.objects.append(obstacle)
 
             # left & right walls (vertical)
             for x in (left_x, right_x):
-                obstacle = Obstacle(self.road, [x, center_y], heading=np.pi / 2)
-                obstacle.LENGTH, obstacle.WIDTH = (total_height, wall_thickness)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                obstacle = Obstacle(
+                    self.road, [x, center_y], heading=np.pi / 2)
+                obstacle.LENGTH, obstacle.WIDTH = (
+                    total_height, wall_thickness)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2)
                 self.road.objects.append(obstacle)
 
     def compute_reward(
@@ -383,7 +364,8 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         obs = self.observation_type_parking.observe()
         obs = obs if isinstance(obs, tuple) else (obs,)
         success = all(
-            self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+            self._is_success(agent_obs["achieved_goal"],
+                             agent_obs["desired_goal"])
             for agent_obs in obs
         )
         return bool(crashed or success)
