@@ -143,7 +143,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         self._create_road()
         self._create_vehicles()
 
-    def _create_road(self, spots: int = 6) -> None:
+    def _create_road(self, spots: int = 5) -> None:
         """
         Create a road composed of straight adjacent lanes laid out for parallel parking.
 
@@ -155,8 +155,8 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         lane_lt = (LineType.NONE, LineType.NONE)  # hide horizontal sidelines
         marker_lt = (LineType.CONTINUOUS, LineType.CONTINUOUS)
         x_offset = 0
-        y_offset = 10
-        length = 10
+        y_offset = 12
+        length = 14
         slot_boundaries = set()
 
         for k in range(spots):
@@ -244,7 +244,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             {"left_x": -35.0, "right_x": 35.0, "top_y": 21.0, "bot_y": -21.0},
         )
         left_x, right_x = bounds["left_x"], bounds["right_x"]
-        center_x = (left_x + right_x) / 2.0
+        center_x = (left_x + right_x) / 2.0 - 10
         center_y = 0.0
 
         # margin from the walls so cars aren't partly inside them
@@ -258,7 +258,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         ego = self.action_type.vehicle_class(
             self.road,
             [center_x, center_y],  # center of the middle lane
-            heading=0.0,           # facing right
+            heading= - 0.5,           # facing right
             speed=0.0,             # RL agent will control speed
         )
         ego.color = VehicleGraphics.EGO_COLOR
@@ -367,6 +367,58 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                     obstacle.LENGTH**2 + obstacle.WIDTH**2
                 )
                 self.road.objects.append(obstacle)
+
+    def get_all_obstacles_info(self):
+        """
+        Extract ALL obstacles: static vehicles, dynamic vehicles, and walls.
+        
+        Returns:
+            dict with three keys:
+                - 'static_vehicles': parked vehicles (speed = 0)
+                - 'dynamic_vehicles': moving vehicles (speed > 0)
+                - 'walls': wall obstacles
+        """
+        obstacles_info = {
+            'static_vehicles': [],
+            'dynamic_vehicles': [],
+            'walls': []
+        }
+        
+        if not hasattr(self, 'road') or not self.road:
+            return obstacles_info
+        
+        # ===== 1. VEHICLES (static + dynamic) =====
+        # Skip ego vehicle (first in list)
+        for vehicle in self.road.vehicles[1:]:
+            obstacle_dict = {
+                'position': np.array([vehicle.position[0], vehicle.position[1]]),
+                'heading': vehicle.heading,
+                'length': vehicle.LENGTH,
+                'width': vehicle.WIDTH,
+                'speed': vehicle.speed
+            }
+            
+            # Classify as static or dynamic based on speed
+            if abs(vehicle.speed) < 0.1:  # Threshold for "parked"
+                obstacles_info['static_vehicles'].append(obstacle_dict)
+            else:
+                obstacles_info['dynamic_vehicles'].append(obstacle_dict)
+        
+        # ===== 2. WALLS =====
+        # Walls are stored in self.road.objects as Obstacle instances
+        for obj in self.road.objects:
+            # Check if it's a wall (Obstacle type, not Landmark which is the goal)
+            if obj.__class__.__name__ == 'Obstacle':
+                wall_dict = {
+                    'position': np.array([obj.position[0], obj.position[1]]),
+                    'heading': obj.heading,
+                    'length': obj.LENGTH,
+                    'width': obj.WIDTH,
+                    'speed': 0.0  # Walls are static
+                }
+                obstacles_info['walls'].append(wall_dict)
+        
+        return obstacles_info
 
     def compute_reward(
         self,
