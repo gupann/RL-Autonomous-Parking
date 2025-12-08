@@ -96,7 +96,6 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "action": {
                     "type": "ContinuousAction",
                     "acceleration_range": (-1.0, 1.0),
-                    # "steering_range": np.deg2rad(60),  # ±60° instead of default ±45°
                     "speed_range": (-2, 2),
                 },
                 "reward_weights": [1, 1, 0.1, 0.1, 1, 1],
@@ -111,7 +110,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "centering_position": [0.5, 0.5],
                 "scaling": 7,
                 "controlled_vehicles": 1,
-                "vehicles_count": 24,
+                "vehicles_count": 28,
                 "add_walls": True,
                 "manual_vehicle_position": None,
             }
@@ -131,12 +130,14 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         info = super()._info(obs, action)
         if isinstance(self.observation_type, MultiAgentObservation):
             success = tuple(
-                self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+                self._is_success(
+                    agent_obs["achieved_goal"], agent_obs["desired_goal"])
                 for agent_obs in obs
             )
         else:
             obs = self.observation_type_parking.observe()
-            success = self._is_success(obs["achieved_goal"], obs["desired_goal"])
+            success = self._is_success(
+                obs["achieved_goal"], obs["desired_goal"])
         info.update({"is_success": success})
         return info
 
@@ -188,7 +189,8 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         for i in range(self.config["controlled_vehicles"]):
             x0 = float(i - self.config["controlled_vehicles"] // 2) * 10.0
             vehicle = self.action_type.vehicle_class(
-                self.road, [x0, 0.0], 2.0 * np.pi * self.np_random.uniform(), 0.0
+                self.road, [x0, 0.0], 2.0 * np.pi *
+                self.np_random.uniform(), 0.0
             )
             vehicle.color = VehicleGraphics.EGO_COLOR
             self.road.vehicles.append(vehicle)
@@ -197,7 +199,8 @@ class ParkingEnv(AbstractEnv, GoalEnv):
 
         # Goal
         for vehicle in self.controlled_vehicles:
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))]
             lane = self.road.network.get_lane(lane_index)
             vehicle.goal = Landmark(
                 self.road, lane.position(lane.length / 2, 0), heading=lane.heading
@@ -212,16 +215,16 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         #         lane_index = position_config["lane_index"]
         #         longitudinal = position_config.get("longitudinal", 4.0)
         #         speed = position_config.get("speed", 0.0)
-                
+
         #         # Convert string lane_index to tuple if needed
         #         if isinstance(lane_index, str):
         #             # Parse string like "('a', 'b', 0)" to tuple
         #             lane_index = eval(lane_index)
-                
+
         #         if lane_index in empty_spots:
         #             v = Vehicle.make_on_lane(
-        #                 self.road, lane_index, 
-        #                 longitudinal=longitudinal, 
+        #                 self.road, lane_index,
+        #                 longitudinal=longitudinal,
         #                 speed=speed
         #             )
         #             self.road.vehicles.append(v)
@@ -236,12 +239,14 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         #         self.road.vehicles.append(v)
         #         empty_spots.remove(lane_index)
 
-        ### ORIGINAL CODE for Other Vehicles
+        # ORIGINAL CODE for Other Vehicles
         for i in range(self.config["vehicles_count"]):
             if not empty_spots:
                 continue
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
-            v = Vehicle.make_on_lane(self.road, lane_index, longitudinal=4.0, speed=0.0)
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))]
+            v = Vehicle.make_on_lane(
+                self.road, lane_index, longitudinal=4.0, speed=0.0)
             self.road.vehicles.append(v)
             empty_spots.remove(lane_index)
 
@@ -251,12 +256,14 @@ class ParkingEnv(AbstractEnv, GoalEnv):
             for y in [-height / 2, height / 2]:
                 obstacle = Obstacle(self.road, [0, y])
                 obstacle.LENGTH, obstacle.WIDTH = (width, 1)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2)
                 self.road.objects.append(obstacle)
             for x in [-width / 2, width / 2]:
                 obstacle = Obstacle(self.road, [x, 0], heading=np.pi / 2)
                 obstacle.LENGTH, obstacle.WIDTH = (height, 1)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2)
                 self.road.objects.append(obstacle)
 
     def compute_reward(
@@ -311,7 +318,8 @@ class ParkingEnv(AbstractEnv, GoalEnv):
         obs = self.observation_type_parking.observe()
         obs = obs if isinstance(obs, tuple) else (obs,)
         success = all(
-            self._is_success(agent_obs["achieved_goal"], agent_obs["desired_goal"])
+            self._is_success(agent_obs["achieved_goal"],
+                             agent_obs["desired_goal"])
             for agent_obs in obs
         )
         return bool(crashed or success)

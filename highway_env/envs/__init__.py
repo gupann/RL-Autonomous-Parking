@@ -7,11 +7,20 @@ from highway_env.envs.intersection_env import (
 )
 from highway_env.envs.lane_keeping_env import LaneKeepingEnv
 from highway_env.envs.merge_env import MergeEnv
+
+# reverse parking
 from highway_env.envs.parking_env import (
     ParkingEnv,
     ParkingEnvActionRepeat,
     ParkingEnvParkedVehicles,
 )
+from highway_env.envs.reverse_parking_dynObs_env import (
+    ParkingEnv,
+    ParkingEnvActionRepeat,
+    ParkingEnvParkedVehicles,
+)
+
+# parallel parking
 from highway_env.envs.parallel_parking_env import (
     ParkingEnv,
     ParkingEnvActionRepeat,

@@ -1,216 +1,372 @@
 from __future__ import annotations
 
+from abc import abstractmethod
+
 import numpy as np
+from gymnasium import Env
 
-from highway_env.envs.parking_env import ParkingEnv
-from highway_env.vehicle.kinematics import Vehicle
+from highway_env.envs.common.abstract import AbstractEnv
+from highway_env.envs.common.observation import (
+    MultiAgentObservation,
+    observation_factory,
+)
+from highway_env.road.lane import LineType, StraightLane
+from highway_env.road.road import Road, RoadNetwork
 from highway_env.vehicle.graphics import VehicleGraphics
+from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.objects import Landmark, Obstacle
-from highway_env import utils
 
 
-class ReverseParkingDynObsEnv(ParkingEnv):
+class GoalEnv(Env):
     """
-    Reverse parking environment with dynamic obstacles (moving vehicles).
-    
-    Extends the base ParkingEnv to add a moving obstacle vehicle that
-    the agent must avoid while parking.
+    Interface for A goal-based environment.
+
+    This interface is needed by agents such as Stable Baseline3's Hindsight Experience Replay (HER) agent.
+    It was originally part of https://github.com/openai/gym, but was later moved
+    to https://github.com/Farama-Foundation/gym-robotics. We cannot add gym-robotics to this project's dependencies,
+    since it does not have an official PyPi package, PyPi does not allow direct dependencies to git repositories.
+    So instead, we just reproduce the interface here.
+
+    A goal-based environment. It functions just as any regular OpenAI Gym environment but it
+    imposes a required structure on the observation_space. More concretely, the observation
+    space is required to contain at least three elements, namely `observation`, `desired_goal`, and
+    `achieved_goal`. Here, `desired_goal` specifies the goal that the agent should attempt to achieve.
+    `achieved_goal` is the goal that it currently achieved instead. `observation` contains the
+    actual observations of the environment as per usual.
     """
+
+    @abstractmethod
+    def compute_reward(
+        self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info: dict
+    ) -> float:
+        """Compute the step reward. This externalizes the reward function and makes
+        it dependent on a desired goal and the one that was achieved. If you wish to include
+        additional rewards that are independent of the goal, you can include the necessary values
+        to derive it in 'info' and compute it accordingly.
+        Args:
+            achieved_goal (object): the goal that was achieved during execution
+            desired_goal (object): the desired goal that we asked the agent to attempt to achieve
+            info (dict): an info dictionary with additional information
+        Returns:
+            float: The reward that corresponds to the provided achieved goal w.r.t. to the desired
+            goal. Note that the following should always hold true:
+                ob, reward, done, info = env.step()
+                assert reward == env.compute_reward(ob['achieved_goal'], ob['desired_goal'], info)
+        """
+        raise NotImplementedError
+
+
+class ParkingEnv(AbstractEnv, GoalEnv):
+    """
+    A continuous control environment.
+
+    It implements a reach-type task, where the agent observes their position and speed and must
+    control their acceleration and steering so as to reach a given goal.
+
+    Credits to Munir Jojo-Verge for the idea and initial implementation.
+    """
+
+    # For parking env with GrayscaleObservation, the env need
+    # this PARKING_OBS to calculate the reward and the info.
+    # Bug fixed by Mcfly(https://github.com/McflyWZX)
+    PARKING_OBS = {
+        "observation": {
+            "type": "KinematicsGoal",
+            "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
+            "scales": [100, 100, 5, 5, 1, 1],
+            "normalize": False,
+        }
+    }
+
+    def __init__(self, config: dict = None, render_mode: str | None = None) -> None:
+        super().__init__(config, render_mode)
+        self.observation_type_parking = None
 
     @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update(
             {
-                # Dynamic obstacle settings
-                "moving_obstacle": True,
-                "moving_obstacle_speed": 1.0,  # m/s
-                "moving_obstacle_position": [-26.0, 14.0],  # Top rightmost parking spot [x, y]
-                "moving_obstacle_heading": np.pi / 2,  # Heading in radians (π/2 = pointing up, vertical like reverse parking)
-                "moving_obstacle_goal": [-26.0, 14.0],  # Goal: bottom lane, 1st (leftmost) parking spot [x, y]
-                "moving_obstacle_goal_tolerance": 2.0,  # Stop when within this distance of goal [m]
-                "moving_obstacle_exit_distance": 12.0,  # Distance to move straight before turning (to exit parking lane) [m]
+                "observation": {
+                    "type": "KinematicsGoal",
+                    "features": ["x", "y", "vx", "vy", "cos_h", "sin_h"],
+                    "scales": [100, 100, 5, 5, 1, 1],
+                    "normalize": False,
+                },
+                "action": {
+                    "type": "ContinuousAction",
+                    "acceleration_range": (-1.0, 1.0),
+                    "speed_range": (-2, 2),
+                },
+                "reward_weights": [1, 1, 0.1, 0.1, 1, 1],
+                "success_goal_reward": 0.08,
+                "collision_reward": -5,
+                "steering_range": np.deg2rad(60),
+                "simulation_frequency": 15,
+                "policy_frequency": 5,
+                "duration": 100,
+                "screen_width": 600,
+                "screen_height": 300,
+                "centering_position": [0.5, 0.5],
+                "scaling": 7,
+                "controlled_vehicles": 1,
+                "vehicles_count": 28,
+                "add_walls": True,
+                "manual_vehicle_position": None,
             }
         )
         return config
 
+    def define_spaces(self) -> None:
+        """
+        Set the types and spaces of observation and action from config.
+        """
+        super().define_spaces()
+        self.observation_type_parking = observation_factory(
+            self, self.PARKING_OBS["observation"]
+        )
+
+    def _info(self, obs, action) -> dict:
+        info = super()._info(obs, action)
+        if isinstance(self.observation_type, MultiAgentObservation):
+            success = tuple(
+                self._is_success(
+                    agent_obs["achieved_goal"], agent_obs["desired_goal"])
+                for agent_obs in obs
+            )
+        else:
+            obs = self.observation_type_parking.observe()
+            success = self._is_success(
+                obs["achieved_goal"], obs["desired_goal"])
+        info.update({"is_success": success})
+        return info
+
+    def _reset(self):
+        self._create_road()
+        self._create_vehicles()
+
+    def _create_road(self, spots: int = 14) -> None:
+        """
+        Create a road composed of straight adjacent lanes.
+
+        :param spots: number of spots in the parking
+        """
+        net = RoadNetwork()
+        width = 4.0
+        lt = (LineType.CONTINUOUS, LineType.CONTINUOUS)
+        x_offset = 0
+        y_offset = 10
+        length = 8
+        for k in range(spots):
+            x = (k + 1 - spots // 2) * (width + x_offset) - width / 2
+            net.add_lane(
+                "a",
+                "b",
+                StraightLane(
+                    [x, y_offset], [x, y_offset + length], width=width, line_types=lt
+                ),
+            )
+            net.add_lane(
+                "b",
+                "c",
+                StraightLane(
+                    [x, -y_offset], [x, -y_offset - length], width=width, line_types=lt
+                ),
+            )
+
+        self.road = Road(
+            network=net,
+            np_random=self.np_random,
+            record_history=self.config["show_trajectories"],
+        )
+
     def _create_vehicles(self) -> None:
-        """Create vehicles including ego, goal, parked cars, and moving obstacle."""
-        # Get dynamic obstacle positions to exclude from static vehicle placement
-        moving_obs_pos = self.config.get("moving_obstacle_position", [26.0, 14.0])
-        moving_obs_goal = self.config.get("moving_obstacle_goal", [-26.0, 14.0])
-        
-        # Get all available parking spots (lanes)
-        empty_spots = list(self.road.network.lanes_dict().keys())
-        
-        # Find and remove lanes that contain the dynamic obstacle's start and goal positions
-        excluded_lanes = []
-        
-        for lane_index in empty_spots:
-            lane = self.road.network.get_lane(lane_index)
-            
-            # Check if this lane contains the start position (with small margin only for vehicle size)
-            # Use smaller margin to only exclude the exact lane, not adjacent ones
-            start_on_lane = lane.on_lane(np.array(moving_obs_pos), margin=1.0)  # Small margin for vehicle width
-            
-            # Check if this lane contains the goal position
-            goal_on_lane = lane.on_lane(np.array(moving_obs_goal), margin=1.0)
-            
-            # Exclude only lanes that actually contain the start or goal positions
-            if start_on_lane or goal_on_lane:
-                excluded_lanes.append(lane_index)
-        
-        # Remove excluded lanes from available spots
-        for lane_index in excluded_lanes:
-            if lane_index in empty_spots:
-                empty_spots.remove(lane_index)
-        
-        # Create controlled vehicles (ego)
+        """Ego in center aisle, two dynamic cars in opposite directions, plus parked cars."""
+
+        # -------------------------
+        # Geometry for the middle aisle
+        # -------------------------
+        # These match the wall values used below
+        width, height = 70.0, 42.0
+        left_x, right_x = -width / 2.0, width / 2.0
+        center_x, center_y = 0.0, 0.0
+        margin = 3.0  # keep dynamic cars away from walls a bit
+
+        # -------------------------
+        # 1. Ego vehicle (controlled)
+        # -------------------------
         self.controlled_vehicles = []
-        for i in range(self.config["controlled_vehicles"]):
-            x0 = float(i - self.config["controlled_vehicles"] // 2) * 10.0
-            vehicle = self.action_type.vehicle_class(
-                self.road, [x0, 0.0], 2.0 * np.pi * self.np_random.uniform(), 0.0
-            )
-            vehicle.color = VehicleGraphics.EGO_COLOR
-            self.road.vehicles.append(vehicle)
-            self.controlled_vehicles.append(vehicle)
-            if vehicle.lane_index in empty_spots:
-                empty_spots.remove(vehicle.lane_index)
-        
-        # Create goal for ego vehicle
-        for vehicle in self.controlled_vehicles:
-            if not empty_spots:
-                continue
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
+
+        ego = self.action_type.vehicle_class(
+            self.road,
+            [center_x, center_y],  # center of the middle lane/aisle
+            # facing right (you can change to np.pi if you prefer)
+            heading=0.0,
+            speed=0.0,
+        )
+        ego.color = VehicleGraphics.EGO_COLOR
+        self.road.vehicles.append(ego)
+        self.controlled_vehicles.append(ego)
+
+        # -------------------------
+        # 2. Dynamic vehicle 1: left → right
+        # -------------------------
+        dyn1 = Vehicle(
+            self.road,
+            # left side, slightly below center
+            [left_x + margin, center_y - 5.0],
+            heading=0.0,                        # facing right
+            speed=3.0,                          # 3 m/s
+        )
+        dyn1.LENGTH = 4.5
+        dyn1.WIDTH = 2.0
+        dyn1.diagonal = np.sqrt(dyn1.LENGTH**2 + dyn1.WIDTH**2)
+        dyn1.color = VehicleGraphics.DEFAULT_COLOR
+        self.road.vehicles.append(dyn1)
+
+        # -------------------------
+        # 3. Dynamic vehicle 2: right → left
+        # -------------------------
+        dyn2 = Vehicle(
+            self.road,
+            # right side, slightly above center
+            [right_x - margin, center_y + 5.0],
+            heading=np.pi,                       # facing left
+            speed=3.0,                           # 3 m/s
+        )
+        dyn2.LENGTH = 4.5
+        dyn2.WIDTH = 2.0
+        dyn2.diagonal = np.sqrt(dyn2.LENGTH**2 + dyn2.WIDTH**2)
+        dyn2.color = VehicleGraphics.DEFAULT_COLOR
+        self.road.vehicles.append(dyn2)
+
+        # -------------------------
+        # 4. Reverse-parking slots: goal + parked cars
+        # -------------------------
+        empty_spots = list(self.road.network.lanes_dict().keys())
+
+        # Remove ego lane if it accidentally has a lane_index
+        if ego.lane_index in empty_spots:
+            empty_spots.remove(ego.lane_index)
+
+        # Goal: choose one random slot as parking goal for ego
+        if empty_spots:
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))
+            ]
             lane = self.road.network.get_lane(lane_index)
-            vehicle.goal = Landmark(
-                self.road, lane.position(lane.length / 2, 0), heading=lane.heading
+            ego.goal = Landmark(
+                self.road,
+                lane.position(lane.length / 2, 0),  # center of slot
+                heading=(lane.heading),
             )
-            self.road.objects.append(vehicle.goal)
+            self.road.objects.append(ego.goal)
             empty_spots.remove(lane_index)
-        
-        # Create static parked vehicles (excluding dynamic obstacle positions)
-        for i in range(self.config["vehicles_count"]):
+
+        # Static parked vehicles in remaining slots
+        for _ in range(self.config["vehicles_count"]):
             if not empty_spots:
-                continue
-            lane_index = empty_spots[self.np_random.choice(np.arange(len(empty_spots)))]
-            v = Vehicle.make_on_lane(self.road, lane_index, longitudinal=4.0, speed=0.0)
+                break
+            lane_index = empty_spots[self.np_random.choice(
+                np.arange(len(empty_spots)))
+            ]
+            lane = self.road.network.get_lane(lane_index)
+            v = Vehicle.make_on_lane(
+                self.road,
+                lane_index,
+                longitudinal=lane.length / 2,  # park at slot center
+                speed=0.0,
+            )
             self.road.vehicles.append(v)
             empty_spots.remove(lane_index)
-        
-        # Create walls (if enabled)
+
+        # -------------------------
+        # 5. Walls (same as before)
+        # -------------------------
         if self.config["add_walls"]:
-            width, height = 70, 42
-            for y in [-height / 2, height / 2]:
-                obstacle = Obstacle(self.road, [0, y])
-                obstacle.LENGTH, obstacle.WIDTH = (width, 1)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+            for y in [-height / 2.0, height / 2.0]:
+                obstacle = Obstacle(self.road, [0.0, y])
+                obstacle.LENGTH, obstacle.WIDTH = (width, 1.0)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2
+                )
                 self.road.objects.append(obstacle)
-            for x in [-width / 2, width / 2]:
-                obstacle = Obstacle(self.road, [x, 0], heading=np.pi / 2)
-                obstacle.LENGTH, obstacle.WIDTH = (height, 1)
-                obstacle.diagonal = np.sqrt(obstacle.LENGTH**2 + obstacle.WIDTH**2)
+            for x in [-width / 2.0, width / 2.0]:
+                obstacle = Obstacle(self.road, [x, 0.0], heading=np.pi / 2.0)
+                obstacle.LENGTH, obstacle.WIDTH = (height, 1.0)
+                obstacle.diagonal = np.sqrt(
+                    obstacle.LENGTH**2 + obstacle.WIDTH**2
+                )
                 self.road.objects.append(obstacle)
-        
-        # Add moving obstacle if enabled
-        if self.config.get("moving_obstacle", True):
-            # Get moving obstacle configuration
-            moving_obs_pos = self.config.get("moving_obstacle_position", [26.0, 14.0])
-            moving_obs_speed = self.config.get("moving_obstacle_speed", 1.0)
-            moving_obs_heading = self.config.get("moving_obstacle_heading", np.pi / 2)
-            moving_obs_goal = self.config.get("moving_obstacle_goal", [-26.0, -6.0])
-            goal_tolerance = self.config.get("moving_obstacle_goal_tolerance", 2.0)
-            exit_distance = self.config.get("moving_obstacle_exit_distance", 12.0)
-            
-            # Create moving obstacle vehicle with goal-seeking behavior
-            moving_obstacle = GoalSeekingVehicle(
-                self.road,
-                moving_obs_pos,
-                heading=moving_obs_heading,
-                speed=moving_obs_speed,
-                goal_position=moving_obs_goal,
-                goal_tolerance=goal_tolerance,
-                exit_distance=exit_distance,
+
+    def compute_reward(
+        self,
+        achieved_goal: np.ndarray,
+        desired_goal: np.ndarray,
+        info: dict,
+        p: float = 0.5,
+    ) -> float:
+        """
+        Proximity to the goal is rewarded
+
+        We use a weighted p-norm
+
+        :param achieved_goal: the goal that was achieved
+        :param desired_goal: the goal that was desired
+        :param dict info: any supplementary information
+        :param p: the Lp^p norm used in the reward. Use p<1 to have high kurtosis for rewards in [0, 1]
+        :return: the corresponding reward
+        """
+        return -np.power(
+            np.dot(
+                np.abs(achieved_goal - desired_goal),
+                np.array(self.config["reward_weights"]),
+            ),
+            p,
+        )
+
+    def _reward(self, action: np.ndarray) -> float:
+        obs = self.observation_type_parking.observe()
+        obs = obs if isinstance(obs, tuple) else (obs,)
+        reward = sum(
+            self.compute_reward(
+                agent_obs["achieved_goal"], agent_obs["desired_goal"], {}
             )
-            
-            # # Set dimensions to match typical vehicle size
-            # moving_obstacle.LENGTH = 4.5
-            # moving_obstacle.WIDTH = 2.0
-            
-            # # Make it the same color as static cars (yellow)
-            # moving_obstacle.color = (1.0, 1.0, 0.0)  # Yellow color (same as static cars)
-            
-            # Add to road (but NOT to controlled_vehicles - it moves autonomously)
-            self.road.vehicles.append(moving_obstacle)
+            for agent_obs in obs
+        )
+        reward += self.config["collision_reward"] * sum(
+            v.crashed for v in self.controlled_vehicles
+        )
+        return reward
+
+    def _is_success(self, achieved_goal: np.ndarray, desired_goal: np.ndarray) -> bool:
+        return (
+            self.compute_reward(achieved_goal, desired_goal, {})
+            > -self.config["success_goal_reward"]
+        )
+
+    def _is_terminated(self) -> bool:
+        """The episode is over if the ego vehicle crashed or the goal is reached or time is over."""
+        crashed = any(vehicle.crashed for vehicle in self.controlled_vehicles)
+        obs = self.observation_type_parking.observe()
+        obs = obs if isinstance(obs, tuple) else (obs,)
+        success = all(
+            self._is_success(agent_obs["achieved_goal"],
+                             agent_obs["desired_goal"])
+            for agent_obs in obs
+        )
+        return bool(crashed or success)
+
+    def _is_truncated(self) -> bool:
+        """The episode is truncated if the time is over."""
+        return self.time >= self.config["duration"]
 
 
-class GoalSeekingVehicle(Vehicle):
-    """
-    A vehicle that moves towards a goal position.
-    First exits the parking lane vertically, then navigates to the goal.
-    """
-    
-    def __init__(self, road, position, heading=0, speed=0, goal_position=None, goal_tolerance=2.0, exit_distance=12.0):
-        super().__init__(road, position, heading, speed)
-        self.goal_position = np.array(goal_position) if goal_position is not None else None
-        self.goal_tolerance = goal_tolerance
-        self.exit_distance = exit_distance
-        self.reached_goal = False
-        self.exited_parking_lane = False
-        
-        # Store initial position to track distance moved
-        self.initial_position = np.array(position)
-        
-        # Controller parameters
-        self.KP_HEADING = 2.0  # Proportional gain for heading control
-        self.MAX_STEERING_ANGLE = np.pi / 3  # Maximum steering angle [rad]
-        self.TARGET_SPEED = speed if speed > 0 else 1.0  # Target speed [m/s]
-    
-    def act(self, action=None):
-        """Calculate action to move towards goal."""
-        if self.reached_goal or self.goal_position is None:
-            # Stop if goal reached or no goal set
-            self.action = {"steering": 0.0, "acceleration": -self.speed * 2.0}  # Brake to stop
-            return
-        
-        # Phase 1: Exit parking lane vertically (move straight in current heading direction)
-        if not self.exited_parking_lane:
-            # Calculate distance moved from initial position
-            distance_moved = np.linalg.norm(np.array(self.position) - self.initial_position)
-            
-            # Check if we've moved far enough to exit the parking lane
-            if distance_moved >= self.exit_distance:
-                self.exited_parking_lane = True
-            else:
-                # Continue moving straight (no steering, maintain speed)
-                self.action = {"steering": 0.0, "acceleration": 0.0}  # Keep current heading and speed
-                return
-        
-        # Phase 2: Navigate towards goal (only after exiting parking lane)
-        # Calculate direction to goal
-        goal_vec = self.goal_position - np.array(self.position)
-        distance_to_goal = np.linalg.norm(goal_vec)
-        
-        # Check if goal reached
-        if distance_to_goal < self.goal_tolerance:
-            self.reached_goal = True
-            self.action = {"steering": 0.0, "acceleration": -self.speed * 2.0}  # Brake to stop
-            return
-        
-        # Calculate desired heading towards goal
-        desired_heading = np.arctan2(goal_vec[1], goal_vec[0])
-        
-        # Calculate heading error (wrap to [-π, π])
-        heading_error = utils.wrap_to_pi(desired_heading - self.heading)
-        
-        # Calculate steering angle (proportional control, clamped to max)
-        steering = np.clip(self.KP_HEADING * heading_error, -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
-        
-        # Calculate acceleration to maintain target speed
-        speed_error = self.TARGET_SPEED - self.speed
-        acceleration = np.clip(speed_error * 2.0, -2.0, 2.0)  # Simple P controller
-        
-        # Set action
-        self.action = {"steering": steering, "acceleration": acceleration}
+class ParkingEnvActionRepeat(ParkingEnv):
+    def __init__(self):
+        super().__init__({"policy_frequency": 1, "duration": 20})
 
+
+class ParkingEnvParkedVehicles(ParkingEnv):
+    def __init__(self):
+        super().__init__({"vehicles_count": 10})

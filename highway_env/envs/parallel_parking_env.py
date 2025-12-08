@@ -108,7 +108,7 @@ class ParkingEnv(AbstractEnv, GoalEnv):
                 "centering_position": [0.5, 0.5],
                 "scaling": 7,
                 "controlled_vehicles": 1,
-                "vehicles_count": 11,
+                "vehicles_count": 28,
                 "add_walls": True,
                 "manual_vehicle_position": None,
             }

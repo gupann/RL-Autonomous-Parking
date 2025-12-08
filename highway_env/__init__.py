@@ -76,12 +76,33 @@ def _register_highway_envs():
         entry_point="highway_env.envs.merge_env:MergeEnv",
     )
 
+    # reverse parking
+
     # parking_env.py
     register(
         id="parking-v0",
         entry_point="highway_env.envs.parking_env:ParkingEnv",
     )
+    # reverse_parking_dynObs_env.py
+    register(
+        id="parking-reverse-dynObs-v0",
+        entry_point="highway_env.envs.reverse_parking_dynObs_env:ParkingEnv",
+    )
 
+    # parallel parking
+
+    # parking_parallel_env.py
+    register(
+        id="parking-parallel-v0",
+        entry_point="highway_env.envs.parallel_parking_env:ParkingEnv",
+    )
+    # parallel_parking_dynObs_env.py
+    register(
+        id="parking-parallel-dynObs-v0",
+        entry_point="highway_env.envs.parallel_parking_dynObs_env:ParkingEnv",
+    )
+
+    # helper methods (in each parking env)
     register(
         id="parking-ActionRepeat-v0",
         entry_point="highway_env.envs.parking_env:ParkingEnvActionRepeat",
@@ -90,21 +111,6 @@ def _register_highway_envs():
     register(
         id="parking-parked-v0",
         entry_point="highway_env.envs.parking_env:ParkingEnvParkedVehicles",
-    )
-
-    register(
-        id="parking-parallel-v0",
-        entry_point="highway_env.envs.parallel_parking_env:ParkingEnv",
-    )
-
-    register(
-        id="parking-parallel-dynObs-v0",
-        entry_point="highway_env.envs.parallel_parking_dynObs_env:ParkingEnv",
-    )
-
-    register(
-        id="parking-reverse-dynObs-v0",
-        entry_point="highway_env.envs.reverse_parking_dynObs_env:ReverseParkingDynObsEnv",
     )
 
     # racetrack_env.py
