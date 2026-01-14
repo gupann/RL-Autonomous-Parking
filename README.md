@@ -2,6 +2,8 @@
 
 A comparative study of **Model-Based RL (Learned Dynamics + MPC)** and **Model-Free RL (SAC + HER)** on precision-critical autonomous parking tasks, focusing on **data efficiency** and **generalization** in constrained environments.
 
+**Slides:** [Presentation](https://docs.google.com/presentation/d/1fVfBCZ2CNa31z7j_jOH2du2q3E-f-MJC5eWOpZHQ3_s)
+
 ---
 
 ## Overview
